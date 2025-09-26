@@ -44,6 +44,16 @@ python cli.py job.txt resumes/ --top-k 5 --output results.json
 
 The command prints the matches in descending order of similarity and optionally saves them to JSON or CSV based on the output file extension.
 
+## Interactive Streamlit app
+
+To explore the resume screener in the browser, run the Streamlit application:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+The app allows you to paste or upload a job description (TXT, PDF, or DOCX), add multiple resume PDFs, filter the results, and download the ranked matches as JSON or CSV.
+
 ## Running tests
 
 ```bash
