@@ -131,34 +131,44 @@ def main() -> None:
 
     st.subheader("Job description")
     job_description_file = st.file_uploader(
-
-        "Upload a job description file",
+        "Upload a job description file (optional)",
         type=["txt", "pdf", "docx"],
-
-        "Upload a job description text file",
-        type=["txt"],
-
-        help="Optional: you can paste text directly into the editor below instead.",
+        help=(
+            "Upload a job description document or leave this blank and type the "
+            "details manually in the editor below."
+        ),
     )
 
-    initial_job_description = ""
+    uploaded_job_description_text = ""
     if job_description_file is not None:
-
         try:
-            initial_job_description = _load_job_description(job_description_file)
+            uploaded_job_description_text = _load_job_description(job_description_file)
         except (ValueError, PDFExtractionError) as exc:
             st.error(str(exc))
             return
 
-        initial_job_description = job_description_file.read().decode("utf-8", errors="ignore")
-
-
-    job_description_text = st.text_area(
-        "Paste or edit the job description",
-        value=initial_job_description,
-        height=200,
-        placeholder="Describe the responsibilities, required skills, and experience for the role...",
+    input_mode = st.radio(
+        "How would you like to provide the job description?",
+        (
+            "Use uploaded document",
+            "Type manually",
+        ),
+        index=0 if job_description_file is not None else 1,
+        help="Choose whether to rely on the uploaded document or enter the description directly.",
     )
+
+    manual_job_description = ""
+    if input_mode == "Type manually":
+        manual_job_description = st.text_area(
+            "Paste or edit the job description",
+            key="manual_job_description",
+            height=200,
+            placeholder=(
+                "Describe the responsibilities, required skills, and experience for the role..."
+            ),
+        )
+    elif job_description_file is None:
+        st.info("Upload a job description document or switch to manual entry to continue.")
 
     st.subheader("Candidate resumes")
     resume_files = st.file_uploader(
@@ -169,6 +179,15 @@ def main() -> None:
     )
 
     if st.button("Screen resumes", type="primary"):
+        job_description_text = ""
+        if input_mode == "Use uploaded document":
+            if job_description_file is None:
+                st.error("Please upload a job description document or switch to manual entry.")
+                return
+            job_description_text = uploaded_job_description_text
+        else:
+            job_description_text = manual_job_description
+
         if not job_description_text.strip():
             st.error("Please provide a job description before screening resumes.")
             return
