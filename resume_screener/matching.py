@@ -107,10 +107,18 @@ def score_resumes(
         if score < min_score:
             continue
 
-        # Highlight keywords that have high tf-idf values in the resume and appear in the job description
-        shared_terms = [term for term in tokens if term in job_vector]
-        unique_shared = list(dict.fromkeys(shared_terms))
-        highlights = tuple(unique_shared[:5])
+        # Highlight keywords that carry the most weight for both the resume and job description.
+        candidate_terms = []
+        for term in set(tokens):
+            if term not in job_vector:
+                continue
+            weight = resume_vector.get(term, 0.0) * job_vector.get(term, 0.0)
+            if weight <= 0.0:
+                continue
+            candidate_terms.append((term, weight))
+
+        candidate_terms.sort(key=lambda item: item[1], reverse=True)
+        highlights = tuple(term for term, _ in candidate_terms[:5])
         matches.append(ResumeMatch(resume_id=resume_id, score=score, highlights=highlights))
 
     matches.sort(key=lambda match: match.score, reverse=True)
