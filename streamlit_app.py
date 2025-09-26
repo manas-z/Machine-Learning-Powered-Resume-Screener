@@ -11,6 +11,10 @@ from typing import Iterable
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
+from docx import Document
+
+
+
 from resume_screener import pipeline
 from resume_screener.matching import ResumeMatch
 from resume_screener.pdf_extractor import PDFExtractionError, extract_text_from_pdf
@@ -35,6 +39,43 @@ def _extract_resume_texts(uploaded_files: Iterable[UploadedFile]) -> dict[str, s
             temp_path.unlink(missing_ok=True)
 
     return resume_texts
+
+
+def _load_job_description(uploaded_file: UploadedFile) -> str:
+    """Extract text from an uploaded job description file."""
+
+    suffix = Path(uploaded_file.name).suffix.lower()
+
+    if suffix == ".txt":
+        uploaded_file.seek(0)
+        return uploaded_file.read().decode("utf-8", errors="ignore")
+
+    if suffix == ".pdf":
+        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+            uploaded_file.seek(0)
+            temp_pdf.write(uploaded_file.read())
+            temp_path = Path(temp_pdf.name)
+
+        try:
+            return extract_text_from_pdf(temp_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    if suffix == ".docx":
+        uploaded_file.seek(0)
+        document = Document(io.BytesIO(uploaded_file.read()))
+        text_blocks: list[str] = [
+            paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()
+        ]
+        for table in document.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    if cell_text:
+                        text_blocks.append(cell_text)
+        return "\n".join(text_blocks)
+
+    raise ValueError("Unsupported job description file type.")
 
 
 def _render_download_buttons(matches: list[ResumeMatch]) -> None:
@@ -90,14 +131,27 @@ def main() -> None:
 
     st.subheader("Job description")
     job_description_file = st.file_uploader(
+
+        "Upload a job description file",
+        type=["txt", "pdf", "docx"],
+
         "Upload a job description text file",
         type=["txt"],
+
         help="Optional: you can paste text directly into the editor below instead.",
     )
 
     initial_job_description = ""
     if job_description_file is not None:
+
+        try:
+            initial_job_description = _load_job_description(job_description_file)
+        except (ValueError, PDFExtractionError) as exc:
+            st.error(str(exc))
+            return
+
         initial_job_description = job_description_file.read().decode("utf-8", errors="ignore")
+
 
     job_description_text = st.text_area(
         "Paste or edit the job description",

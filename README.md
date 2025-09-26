@@ -52,8 +52,6 @@ To explore the resume screener in the browser, run the Streamlit application:
 streamlit run streamlit_app.py
 ```
 
-The app allows you to paste or upload a job description, add multiple resume PDFs, filter the results, and download the ranked matches as JSON or CSV.
-
 ## Running tests
 
 ```bash
