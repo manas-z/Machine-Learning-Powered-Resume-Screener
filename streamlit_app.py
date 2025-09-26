@@ -13,6 +13,8 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from docx import Document
 
+
+
 from resume_screener import pipeline
 from resume_screener.matching import ResumeMatch
 from resume_screener.pdf_extractor import PDFExtractionError, extract_text_from_pdf
@@ -129,18 +131,27 @@ def main() -> None:
 
     st.subheader("Job description")
     job_description_file = st.file_uploader(
+
         "Upload a job description file",
         type=["txt", "pdf", "docx"],
+
+        "Upload a job description text file",
+        type=["txt"],
+
         help="Optional: you can paste text directly into the editor below instead.",
     )
 
     initial_job_description = ""
     if job_description_file is not None:
+
         try:
             initial_job_description = _load_job_description(job_description_file)
         except (ValueError, PDFExtractionError) as exc:
             st.error(str(exc))
             return
+
+        initial_job_description = job_description_file.read().decode("utf-8", errors="ignore")
+
 
     job_description_text = st.text_area(
         "Paste or edit the job description",
