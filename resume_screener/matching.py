@@ -18,6 +18,26 @@ class ResumeMatch:
     highlights: Tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class CorpusSnapshot:
+    """Normalised view of the job description and resumes used for scoring."""
+
+    job_tokens: Tuple[str, ...]
+    job_weights: Dict[str, float]
+    resume_tokens: Dict[str, Tuple[str, ...]]
+    resume_weights: Dict[str, Dict[str, float]]
+
+
+@dataclass(frozen=True)
+class KeywordInsight:
+    """Summarises how important a keyword is and how often it appears in resumes."""
+
+    term: str
+    weight: float
+    resume_count: int
+    coverage_ratio: float
+
+
 def _term_frequencies(tokens: Sequence[str]) -> Dict[str, float]:
     counts = Counter(tokens)
     total = float(sum(counts.values())) or 1.0
@@ -61,6 +81,37 @@ def _cosine_similarity(vec_a: Dict[str, float], vec_b: Dict[str, float]) -> floa
     return numerator / (norm_a * norm_b)
 
 
+def prepare_corpus(
+    job_description: str, resume_text_by_id: Dict[str, str]
+) -> CorpusSnapshot:
+    """Create TF-IDF representations used to compare resumes."""
+
+    if not job_description.strip():
+        raise ValueError("Job description text must not be empty.")
+
+    job_tokens = tuple(preprocessing.tokenize(job_description))
+    resume_tokens: Dict[str, Tuple[str, ...]] = {
+        resume_id: tuple(preprocessing.tokenize(text))
+        for resume_id, text in resume_text_by_id.items()
+        if text.strip()
+    }
+
+    documents: List[Sequence[str]] = list(resume_tokens.values()) + [job_tokens]
+    idf = _inverse_document_frequencies(documents)
+    job_weights = _tfidf_vector(job_tokens, idf)
+    resume_weights = {
+        resume_id: _tfidf_vector(tokens, idf)
+        for resume_id, tokens in resume_tokens.items()
+    }
+
+    return CorpusSnapshot(
+        job_tokens=job_tokens,
+        job_weights=job_weights,
+        resume_tokens=resume_tokens,
+        resume_weights=resume_weights,
+    )
+
+
 def score_resumes(
     job_description: str,
     resume_text_by_id: Dict[str, str],
@@ -82,37 +133,24 @@ def score_resumes(
         Minimum similarity score required for a resume to be returned.
     """
 
-    if not job_description.strip():
-        raise ValueError("Job description text must not be empty.")
+    corpus = prepare_corpus(job_description, resume_text_by_id)
 
-    normalised_job = preprocessing.tokenize(job_description)
-    normalised_resumes: Dict[str, List[str]] = {
-        resume_id: preprocessing.tokenize(text)
-        for resume_id, text in resume_text_by_id.items()
-        if text.strip()
-    }
-
-    if not normalised_resumes:
+    if not corpus.resume_tokens:
         return []
 
-    idf = _inverse_document_frequencies(
-        list(normalised_resumes.values()) + [normalised_job]
-    )
-    job_vector = _tfidf_vector(normalised_job, idf)
-
     matches: List[ResumeMatch] = []
-    for resume_id, tokens in normalised_resumes.items():
-        resume_vector = _tfidf_vector(tokens, idf)
-        score = _cosine_similarity(job_vector, resume_vector)
+    for resume_id, tokens in corpus.resume_tokens.items():
+        resume_vector = corpus.resume_weights.get(resume_id, {})
+        score = _cosine_similarity(corpus.job_weights, resume_vector)
         if score < min_score:
             continue
 
         # Highlight keywords that carry the most weight for both the resume and job description.
         candidate_terms = []
         for term in set(tokens):
-            if term not in job_vector:
+            if term not in corpus.job_weights:
                 continue
-            weight = resume_vector.get(term, 0.0) * job_vector.get(term, 0.0)
+            weight = resume_vector.get(term, 0.0) * corpus.job_weights.get(term, 0.0)
             if weight <= 0.0:
                 continue
             candidate_terms.append((term, weight))
@@ -127,3 +165,48 @@ def score_resumes(
         matches = matches[:top_k]
 
     return matches
+
+
+def extract_keyword_insights(
+    corpus: CorpusSnapshot, *, limit: int = 15
+) -> List[KeywordInsight]:
+    """Return the most important job description keywords and their coverage."""
+
+    if not corpus.job_weights:
+        return []
+
+    sorted_terms = sorted(
+        corpus.job_weights.items(), key=lambda item: item[1], reverse=True
+    )
+    total_resumes = len(corpus.resume_tokens)
+
+    insights: List[KeywordInsight] = []
+    for term, weight in sorted_terms[:limit]:
+        resume_count = sum(1 for tokens in corpus.resume_tokens.values() if term in tokens)
+        coverage_ratio = (resume_count / total_resumes) if total_resumes else 0.0
+        insights.append(
+            KeywordInsight(
+                term=term,
+                weight=weight,
+                resume_count=resume_count,
+                coverage_ratio=coverage_ratio,
+            )
+        )
+
+    return insights
+
+
+def missing_keywords_for_resume(
+    corpus: CorpusSnapshot, resume_id: str, *, top_n: int = 10
+) -> Tuple[str, ...]:
+    """Identify the most important job keywords missing from a resume."""
+
+    if resume_id not in corpus.resume_tokens or not corpus.job_weights:
+        return ()
+
+    ordered_terms = [
+        term for term, _ in sorted(corpus.job_weights.items(), key=lambda item: item[1], reverse=True)
+    ]
+    resume_terms = set(corpus.resume_tokens[resume_id])
+    missing = [term for term in ordered_terms if term not in resume_terms][:top_n]
+    return tuple(missing)

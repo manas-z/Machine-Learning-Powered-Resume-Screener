@@ -46,7 +46,14 @@ The command prints the matches in descending order of similarity and optionally 
 
 ## Interactive Streamlit app
 
-To explore the resume screener in the browser, run the Streamlit application:
+The Streamlit interface provides:
+
+- Uploading of job descriptions (TXT, PDF, DOCX) with live editing.
+- Configurable "must-have" keyword filters to flag or hide unsuitable resumes.
+- Keyword intelligence dashboards that surface the most important job skills and their coverage across candidates.
+- Detailed per-candidate insights showing matched skills, missing keywords, and download options for ranked results.
+
+Run the application locally with:
 
 ```bash
 streamlit run streamlit_app.py

@@ -3,6 +3,16 @@ from __future__ import annotations
 from resume_screener import matching
 
 
+def _build_sample_corpus():
+    job_description = "Data scientist with python, sql and machine learning"
+    resume_texts = {
+        "alice": "Python data scientist skilled in SQL and cloud machine learning.",
+        "bob": "Front-end developer with javascript skills.",
+    }
+    corpus = matching.prepare_corpus(job_description, resume_texts)
+    return job_description, resume_texts, corpus
+
+
 def test_score_resumes_ranks_by_similarity():
     job_description = """
     Looking for a data scientist with python, machine learning and NLP experience.
@@ -27,3 +37,32 @@ def test_score_resumes_filters_by_threshold():
 
     matches = matching.score_resumes(job_description, resume_texts, min_score=0.1)
     assert [match.resume_id for match in matches] == ["alice"]
+
+
+def test_prepare_corpus_returns_tokens_and_weights():
+    _, _, corpus = _build_sample_corpus()
+
+    assert corpus.job_tokens
+    assert "python" in corpus.job_weights
+    assert "alice" in corpus.resume_tokens
+    assert corpus.resume_weights["alice"]
+
+
+def test_extract_keyword_insights_reports_coverage():
+    _, _, corpus = _build_sample_corpus()
+
+    insights = matching.extract_keyword_insights(corpus, limit=3)
+    assert insights
+    top_terms = {insight.term for insight in insights}
+    assert "python" in top_terms
+    python_insight = next(insight for insight in insights if insight.term == "python")
+    assert python_insight.resume_count == 1
+
+
+def test_missing_keywords_for_resume_identifies_gaps():
+    _, _, corpus = _build_sample_corpus()
+    missing = matching.missing_keywords_for_resume(corpus, "alice", top_n=2)
+    # Alice already covers the major keywords so only unrelated terms remain.
+    assert isinstance(missing, tuple)
+    missing_bob = matching.missing_keywords_for_resume(corpus, "bob", top_n=5)
+    assert "python" in missing_bob

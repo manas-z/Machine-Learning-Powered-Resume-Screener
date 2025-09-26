@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from statistics import mean
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Iterable
@@ -11,12 +12,10 @@ from typing import Iterable
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
-from docx import Document
 
 
-
-from resume_screener import pipeline
-from resume_screener.matching import ResumeMatch
+from resume_screener import matching, pipeline, preprocessing
+from resume_screener.matching import KeywordInsight, ResumeMatch
 from resume_screener.pdf_extractor import PDFExtractionError, extract_text_from_pdf
 
 
@@ -62,6 +61,8 @@ def _load_job_description(uploaded_file: UploadedFile) -> str:
             temp_path.unlink(missing_ok=True)
 
     if suffix == ".docx":
+        from docx import Document
+
         uploaded_file.seek(0)
         document = Document(io.BytesIO(uploaded_file.read()))
         text_blocks: list[str] = [
@@ -99,6 +100,28 @@ def _render_download_buttons(matches: list[ResumeMatch]) -> None:
         file_name="resume_matches.csv",
         mime="text/csv",
     )
+
+
+def _format_keyword_list(keywords: Iterable[str]) -> str:
+    items = sorted({keyword for keyword in keywords if keyword})
+    return ", ".join(items) if items else "—"
+
+
+def _keyword_coverage_summary(
+    insights: list[KeywordInsight], resume_tokens: dict[str, tuple[str, ...]]
+) -> dict[str, tuple[float, list[str]]]:
+    top_terms = [insight.term for insight in insights]
+    if not top_terms:
+        return {}
+
+    coverage: dict[str, tuple[float, list[str]]] = {}
+    top_term_count = len(top_terms)
+    for resume_id, tokens in resume_tokens.items():
+        token_set = set(tokens)
+        matched = [term for term in top_terms if term in token_set]
+        ratio = len(matched) / top_term_count if top_term_count else 0.0
+        coverage[resume_id] = (ratio, matched)
+    return coverage
 
 
 def main() -> None:
@@ -155,27 +178,41 @@ def main() -> None:
         ),
         index=0 if job_description_file is not None else 1,
         help="Choose whether to rely on the uploaded document or enter the description directly.",
-
-    job_description_text = st.text_area(
-        "Paste or edit the job description",
-        value=initial_job_description,
-        height=200,
-        placeholder="Describe the responsibilities, required skills, and experience for the role...",
-
     )
-
+    job_description_from_upload = uploaded_job_description_text
     manual_job_description = ""
-    if input_mode == "Type manually":
+    if input_mode == "Use uploaded document" and job_description_file is not None:
+        job_description_from_upload = st.text_area(
+            "Review and optionally edit the job description",
+            value=uploaded_job_description_text,
+            key="uploaded_job_description",
+            height=240,
+        )
+    elif input_mode == "Type manually":
         manual_job_description = st.text_area(
-            "Paste or edit the job description",
+            "Paste or type the job description",
             key="manual_job_description",
-            height=200,
+            height=240,
             placeholder=(
                 "Describe the responsibilities, required skills, and experience for the role..."
             ),
         )
-    elif job_description_file is None:
+    else:
         st.info("Upload a job description document or switch to manual entry to continue.")
+
+    st.divider()
+    st.subheader("Keyword strategy")
+    required_keywords_input = st.text_input(
+        "Must-have keywords (comma separated)",
+        help=(
+            "Ensure critical skills are surfaced. The screener highlights resumes missing these keywords and "
+            "can optionally remove them from the final results."
+        ),
+    )
+    enforce_keywords = st.checkbox(
+        "Hide resumes missing any must-have keyword",
+        value=False,
+    )
 
     st.subheader("Candidate resumes")
     resume_files = st.file_uploader(
@@ -191,7 +228,7 @@ def main() -> None:
             if job_description_file is None:
                 st.error("Please upload a job description document or switch to manual entry.")
                 return
-            job_description_text = uploaded_job_description_text
+            job_description_text = job_description_from_upload
         else:
             job_description_text = manual_job_description
 
@@ -226,20 +263,109 @@ def main() -> None:
             )
             return
 
+        try:
+            corpus = matching.prepare_corpus(job_description_text, resume_texts)
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+
+        required_tokens = preprocessing.tokenize(required_keywords_input)
+        keyword_insights = matching.extract_keyword_insights(corpus, limit=15)
+        coverage_summary = _keyword_coverage_summary(keyword_insights, corpus.resume_tokens)
+
+        filtered_matches: list[ResumeMatch] = []
+        missing_required: dict[str, list[str]] = {}
+        dropped_resumes = []
+        for match in matches:
+            resume_terms = set(corpus.resume_tokens.get(match.resume_id, ()))
+            missing = [token for token in required_tokens if token not in resume_terms]
+            missing_required[match.resume_id] = missing
+            if enforce_keywords and missing:
+                dropped_resumes.append(match.resume_id)
+                continue
+            filtered_matches.append(match)
+
+        if enforce_keywords and dropped_resumes:
+            st.info(
+                "Filtered out resumes missing must-have keywords: "
+                + ", ".join(sorted(dropped_resumes))
+            )
+
+        if not filtered_matches:
+            st.warning("No resumes satisfied the configured keyword and score filters.")
+            return
+
+        matches = filtered_matches
+
         st.success(f"Found {len(matches)} matching resume{'s' if len(matches) != 1 else ''}.")
 
-        table_data = [
-            {
-                "Resume": match.resume_id,
-                "Score": round(match.score, 3),
-                "Highlights": ", ".join(match.highlights),
-            }
-            for match in matches
-        ]
-        st.dataframe(table_data, use_container_width=True)
+        match_scores = [match.score for match in matches]
+        score_high = max(match_scores)
+        score_avg = mean(match_scores) if match_scores else 0.0
 
-        st.markdown("### Export results")
-        _render_download_buttons(matches)
+        st.markdown("### Screening summary")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Resumes processed", len(resume_texts))
+        col2.metric("Matches returned", len(matches))
+        col3.metric("Highest score", f"{score_high:.0%}")
+        col4.metric("Average score", f"{score_avg:.0%}")
+
+        tabs = st.tabs(["Ranked results", "Keyword coverage", "Candidate breakdown"])
+
+        table_data = []
+        for match in matches:
+            coverage_ratio, matched_keywords = coverage_summary.get(match.resume_id, (0.0, []))
+            table_data.append(
+                {
+                    "Resume": match.resume_id,
+                    "Score": round(match.score, 3),
+                    "Keyword coverage": f"{int(coverage_ratio * 100)}%",
+                    "Highlights": _format_keyword_list(match.highlights),
+                    "Missing must-have keywords": _format_keyword_list(missing_required.get(match.resume_id, [])),
+                }
+            )
+
+        with tabs[0]:
+            st.dataframe(table_data, use_container_width=True)
+            st.markdown("### Export results")
+            _render_download_buttons(matches)
+
+        with tabs[1]:
+            if not keyword_insights:
+                st.info("Keyword coverage becomes available once there are meaningful job description terms.")
+            else:
+                coverage_table = [
+                    {
+                        "Keyword": insight.term,
+                        "Importance": round(insight.weight, 3),
+                        "Resumes containing": insight.resume_count,
+                        "Coverage": f"{insight.coverage_ratio * 100:.0f}%",
+                    }
+                    for insight in keyword_insights
+                ]
+                st.dataframe(coverage_table, use_container_width=True)
+
+        with tabs[2]:
+            if not keyword_insights:
+                st.info("Run the screener to generate candidate insights.")
+            for match in matches:
+                coverage_ratio, matched_keywords = coverage_summary.get(match.resume_id, (0.0, []))
+                missing_keywords = matching.missing_keywords_for_resume(corpus, match.resume_id, top_n=10)
+                with st.expander(f"{match.resume_id} — Score {match.score:.0%}"):
+                    st.write("Keyword alignment")
+                    st.progress(coverage_ratio, text=f"{int(coverage_ratio * 100)}% of top job keywords matched")
+                    st.write("Matched keywords:")
+                    st.caption(_format_keyword_list(matched_keywords))
+                    st.write("Top missing job keywords:")
+                    st.caption(_format_keyword_list(missing_keywords))
+                    missing_required_keywords = missing_required.get(match.resume_id, [])
+                    if missing_required_keywords:
+                        st.warning(
+                            "Missing must-have keywords: "
+                            + ", ".join(sorted(missing_required_keywords))
+                        )
+                    st.write("Highlights from the resume:")
+                    st.caption(_format_keyword_list(match.highlights))
 
         st.caption(
             "Similarity scores are based on TF-IDF cosine similarity between the job description and resume content."
