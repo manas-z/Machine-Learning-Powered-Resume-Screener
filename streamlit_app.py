@@ -155,6 +155,13 @@ def main() -> None:
         ),
         index=0 if job_description_file is not None else 1,
         help="Choose whether to rely on the uploaded document or enter the description directly.",
+
+    job_description_text = st.text_area(
+        "Paste or edit the job description",
+        value=initial_job_description,
+        height=200,
+        placeholder="Describe the responsibilities, required skills, and experience for the role...",
+
     )
 
     manual_job_description = ""
