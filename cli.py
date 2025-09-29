@@ -1,4 +1,4 @@
-"""Command line interface for the resume screening pipeline."""
+﻿"""Command line interface for the simple resume screener."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,7 @@ from resume_screener import matching, pipeline
 
 def _parse_arguments(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Match resume PDFs against a job description using NLP.",
+        description="Rank resume PDFs against a job description using TF-IDF cosine similarity.",
     )
     parser.add_argument(
         "job_description",
@@ -41,46 +41,23 @@ def _parse_arguments(argv: Iterable[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Optional path to save the results as JSON or CSV (based on extension).",
     )
-    parser.add_argument(
-        "--rerank",
-        dest="rerank",
-        action="store_true",
-        help=(
-            "Enable cross-encoder re-ranking of the strongest matches. "
-            "Requires installing the optional sentence-transformers dependency."
-        ),
-    )
-    parser.add_argument(
-        "--rerank-top-n",
-        type=int,
-        default=None,
-        help="Number of top matches to send to the cross-encoder for re-ranking.",
-    )
-    parser.add_argument(
-        "--rerank-model",
-        type=str,
-        default=matching.DEFAULT_RERANK_MODEL,
-        help="Cross-encoder model identifier to use when re-ranking is enabled.",
-    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
 def _serialise_results(matches: Iterable[matching.ResumeMatch], destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    summary = pipeline.summarise_matches(matches)
+    summary = matching.summarise_matches(matches)
 
     if destination.suffix.lower() == ".json":
         destination.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     elif destination.suffix.lower() == ".csv":
         with destination.open("w", encoding="utf-8", newline="") as csv_file:
-            writer = csv.DictWriter(csv_file, fieldnames=["resume_id", "score", "highlights"])
+            writer = csv.DictWriter(csv_file, fieldnames=["resume_id", "score", "keywords"])
             writer.writeheader()
             for row in summary:
                 writer.writerow(row)
     else:
-        raise ValueError(
-            "Unsupported output format. Use a .json or .csv file extension."
-        )
+        raise ValueError("Unsupported output format. Use a .json or .csv file extension.")
 
 
 def main(argv: Iterable[str] | None = None) -> list[matching.ResumeMatch]:
@@ -94,17 +71,14 @@ def main(argv: Iterable[str] | None = None) -> list[matching.ResumeMatch]:
         resume_texts,
         top_k=args.top_k,
         min_score=args.min_score,
-        enable_rerank=args.rerank,
-        rerank_top_n=args.rerank_top_n,
-        rerank_model=args.rerank_model,
     )
 
     if args.output:
         _serialise_results(matches, args.output)
 
     for match in matches:
-        highlight_text = f" (keywords: {', '.join(match.highlights)})" if match.highlights else ""
-        print(f"{match.resume_id}: {match.score:.3f}{highlight_text}")
+        keyword_text = f" (keywords: {', '.join(match.keywords)})" if match.keywords else ""
+        print(f"{match.resume_id}: {match.score:.3f}{keyword_text}")
 
     return matches
 

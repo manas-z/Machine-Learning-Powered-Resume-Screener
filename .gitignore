@@ -1,2 +1,53 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache/artifacts
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.coverage
+*.cover
+
+# Logs
+*.log
+
+# Editors/OS
+.DS_Store
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.*
+
+# Databases
+*.sqlite3
+
+# Jupyter
+.ipynb_checkpoints/

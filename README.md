@@ -1,12 +1,13 @@
-# Machine Learning Powered Resume Screener
+﻿# Simple Resume Screener
 
-This project provides a light-weight pipeline for screening resume PDFs against a job description. It includes:
+This project showcases a lightweight resume screener that uses TF-IDF and cosine similarity to compare resume PDFs with a job description. It is intentionally focused on the fundamentals so it is easy to explain in a portfolio or demo setting.
 
-- PDF text extraction utilities powered by `pdfminer.six`.
-- A simple NLP similarity model based on TF-IDF and cosine similarity.
-- Optional cross-encoder re-ranking to refine the top matches.
-- A command line interface to rank resume PDFs and export the results.
-- Unit tests covering the matching logic.
+## Features
+
+- Extract text from resume PDFs with `pdfminer.six`.
+- Score resumes against a job description using TF-IDF cosine similarity.
+- Command line script to rank resumes and export the results.
+- Simple Streamlit interface for quick experimentation.
 
 ## Project structure
 
@@ -15,64 +16,41 @@ This project provides a light-weight pipeline for screening resume PDFs against 
 ├── cli.py                     # Command line entry point
 ├── resume_screener/
 │   ├── __init__.py
-│   ├── matching.py            # TF-IDF implementation and similarity scoring
-│   ├── pdf_extractor.py       # Helpers to extract text from PDFs
-│   ├── pipeline.py            # High-level orchestration helpers
-│   └── preprocessing.py       # Tokenisation and text normalisation tools
-└── resume_screener/tests/
-    └── test_matching.py       # Unit tests
+│   ├── matching.py            # TF-IDF scoring helper
+│   ├── pdf_extractor.py       # PDF text extraction utilities
+│   ├── pipeline.py            # Small orchestration helpers
+│   └── preprocessing.py       # Tokenisation helper used for keyword highlights
+└── streamlit_app.py           # Minimal Streamlit UI
 ```
 
 ## Installation
 
-Create a virtual environment and install the dependencies:
-
 ```bash
 python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
 source .venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
-## Usage
+## Command line usage
 
-1. Save your job description to a plain text file, for example `job.txt`.
-2. Place all candidate resumes as PDF files in a single directory, for example `resumes/`.
-3. Run the CLI to generate the ranking:
+Prepare a plain-text job description and place resume PDFs in a folder:
 
 ```bash
-python cli.py job.txt resumes/ --top-k 5 --output results.json
+python cli.py job.txt resumes/ --top-k 5 --output results.csv
 ```
 
-The command prints the matches in descending order of similarity and optionally saves them to JSON or CSV based on the output file extension.
+The command prints the ranked resumes and can optionally save the results to JSON or CSV.
 
-### Cross-encoder re-ranking
+## Streamlit app
 
-For an extra layer of precision you can enable a cross-encoder to rescore the strongest matches produced by the TF-IDF stage. The feature is disabled by default because it downloads a transformer model and performs more expensive inference.
-
-- **CLI:** pass `--rerank` and optionally `--rerank-top-n`/`--rerank-model`.
-- **Environment:** set `RESUME_SCREENER_RERANK=1` and optionally `RESUME_SCREENER_RERANK_TOP_N`.
-- **Streamlit:** toggle *Enable cross-encoder re-ranking* in the sidebar and choose how many resumes to rescore.
-
-Install `sentence-transformers` (preferred) or `transformers` + `torch` to make the feature available. Models are cached in memory across calls so Streamlit sessions avoid repeated downloads.
-
-## Interactive Streamlit app
-
-The Streamlit interface provides:
-
-- Uploading of job descriptions (TXT, PDF, DOCX) with live editing.
-- Configurable "must-have" keyword filters to flag or hide unsuitable resumes.
-- Keyword intelligence dashboards that surface the most important job skills and their coverage across candidates.
-- Detailed per-candidate insights showing matched skills, missing keywords, and download options for ranked results.
-- Optional cross-encoder re-ranking to refine the score ordering.
-
-Run the application locally with:
+Launch the interactive interface with:
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-## Running tests
-
-```bash
-python -m pytest
-```
+Paste your job description, upload PDFs, and view the similarity scores directly in the browser.
