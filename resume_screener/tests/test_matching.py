@@ -66,7 +66,38 @@ def test_score_resumes_filters_by_threshold():
     assert [match.resume_id for match in matches] == ["alice"]
 
 
+
+def test_score_resumes_applies_cross_encoder_rerank():
+    job_description = "Data scientist with NLP experience"
+    resume_texts = {
+        "alice": "Data scientist with Python and NLP background.",
+        "bob": "Front-end developer pivoting to machine learning.",
+    }
+
+    class StubCrossEncoder:
+        def predict(self, sentence_pairs):
+            # Return higher score for Bob to force re-ranking.
+            return [0.2 if "Data scientist" in pair[1] else 0.9 for pair in sentence_pairs]
+
+    def loader(_model_name: str):
+        return StubCrossEncoder()
+
+    matches = matching.score_resumes(
+        job_description,
+        resume_texts,
+        enable_rerank=True,
+        rerank_top_n=2,
+        rerank_model_loader=loader,
+    )
+
+    assert [match.resume_id for match in matches] == ["bob", "alice"]
+    assert matches[0].score > matches[1].score
+
+
+def test_prepare_corpus_returns_tokens_and_weights():
+
 def test_prepare_corpus_returns_tokens_and_embeddings():
+
     _, _, corpus = _build_sample_corpus()
 
     assert corpus.job_tokens

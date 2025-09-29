@@ -41,6 +41,27 @@ def _parse_arguments(argv: Iterable[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Optional path to save the results as JSON or CSV (based on extension).",
     )
+    parser.add_argument(
+        "--rerank",
+        dest="rerank",
+        action="store_true",
+        help=(
+            "Enable cross-encoder re-ranking of the strongest matches. "
+            "Requires installing the optional sentence-transformers dependency."
+        ),
+    )
+    parser.add_argument(
+        "--rerank-top-n",
+        type=int,
+        default=None,
+        help="Number of top matches to send to the cross-encoder for re-ranking.",
+    )
+    parser.add_argument(
+        "--rerank-model",
+        type=str,
+        default=matching.DEFAULT_RERANK_MODEL,
+        help="Cross-encoder model identifier to use when re-ranking is enabled.",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -73,6 +94,9 @@ def main(argv: Iterable[str] | None = None) -> list[matching.ResumeMatch]:
         resume_texts,
         top_k=args.top_k,
         min_score=args.min_score,
+        enable_rerank=args.rerank,
+        rerank_top_n=args.rerank_top_n,
+        rerank_model=args.rerank_model,
     )
 
     if args.output:
