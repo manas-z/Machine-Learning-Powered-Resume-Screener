@@ -1,6 +1,33 @@
 from __future__ import annotations
 
+import numpy as np
+import pytest
+
 from resume_screener import matching
+
+
+@pytest.fixture(autouse=True)
+def _fake_sentence_embeddings(monkeypatch):
+    def _embed(text: str) -> np.ndarray:
+        tokens = matching.preprocessing.tokenize(text)
+        vector = np.zeros(16, dtype=float)
+        for token in tokens:
+            index = sum(ord(char) for char in token) % vector.size
+            vector[index] += 1.0
+        norm = np.linalg.norm(vector)
+        if norm > 0.0:
+            vector /= norm
+        return vector
+
+    def _build_embeddings(job_description, resume_text_by_id, *, model_name=matching.DEFAULT_EMBEDDING_MODEL):
+        job_vector = _embed(job_description)
+        resume_vectors = {
+            resume_id: _embed(text)
+            for resume_id, text in resume_text_by_id.items()
+        }
+        return job_vector, resume_vectors
+
+    monkeypatch.setattr(matching, "build_sentence_embeddings", _build_embeddings)
 
 
 def _build_sample_corpus():
@@ -39,6 +66,7 @@ def test_score_resumes_filters_by_threshold():
     assert [match.resume_id for match in matches] == ["alice"]
 
 
+
 def test_score_resumes_applies_cross_encoder_rerank():
     job_description = "Data scientist with NLP experience"
     resume_texts = {
@@ -67,12 +95,15 @@ def test_score_resumes_applies_cross_encoder_rerank():
 
 
 def test_prepare_corpus_returns_tokens_and_weights():
+
+def test_prepare_corpus_returns_tokens_and_embeddings():
+
     _, _, corpus = _build_sample_corpus()
 
     assert corpus.job_tokens
-    assert "python" in corpus.job_weights
+    assert corpus.job_embedding.size > 0
     assert "alice" in corpus.resume_tokens
-    assert corpus.resume_weights["alice"]
+    assert corpus.resume_embeddings["alice"].size > 0
 
 
 def test_extract_keyword_insights_reports_coverage():
