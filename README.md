@@ -4,6 +4,7 @@ This project provides a light-weight pipeline for screening resume PDFs against 
 
 - PDF text extraction utilities powered by `pdfminer.six`.
 - A simple NLP similarity model based on TF-IDF and cosine similarity.
+- Optional cross-encoder re-ranking to refine the top matches.
 - A command line interface to rank resume PDFs and export the results.
 - Unit tests covering the matching logic.
 
@@ -44,6 +45,16 @@ python cli.py job.txt resumes/ --top-k 5 --output results.json
 
 The command prints the matches in descending order of similarity and optionally saves them to JSON or CSV based on the output file extension.
 
+### Cross-encoder re-ranking
+
+For an extra layer of precision you can enable a cross-encoder to rescore the strongest matches produced by the TF-IDF stage. The feature is disabled by default because it downloads a transformer model and performs more expensive inference.
+
+- **CLI:** pass `--rerank` and optionally `--rerank-top-n`/`--rerank-model`.
+- **Environment:** set `RESUME_SCREENER_RERANK=1` and optionally `RESUME_SCREENER_RERANK_TOP_N`.
+- **Streamlit:** toggle *Enable cross-encoder re-ranking* in the sidebar and choose how many resumes to rescore.
+
+Install `sentence-transformers` (preferred) or `transformers` + `torch` to make the feature available. Models are cached in memory across calls so Streamlit sessions avoid repeated downloads.
+
 ## Interactive Streamlit app
 
 The Streamlit interface provides:
@@ -52,6 +63,7 @@ The Streamlit interface provides:
 - Configurable "must-have" keyword filters to flag or hide unsuitable resumes.
 - Keyword intelligence dashboards that surface the most important job skills and their coverage across candidates.
 - Detailed per-candidate insights showing matched skills, missing keywords, and download options for ranked results.
+- Optional cross-encoder re-ranking to refine the score ordering.
 
 Run the application locally with:
 

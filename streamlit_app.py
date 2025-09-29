@@ -151,6 +151,23 @@ def main() -> None:
         )
         keep_all = st.checkbox("Return all matches", value=True)
         top_k = None if keep_all else int(top_k_option)
+        enable_rerank = st.checkbox(
+            "Enable cross-encoder re-ranking",
+            value=False,
+            help=(
+                "Refine the strongest matches with a cross-encoder."
+                " Requires installing the optional sentence-transformers package."
+            ),
+        )
+        rerank_top_n_value = st.number_input(
+            "Rescore top N resumes",
+            min_value=1,
+            value=5,
+            step=1,
+            help="Only the strongest resumes will be rescored with the cross-encoder.",
+            disabled=not enable_rerank,
+        )
+        rerank_top_n = int(rerank_top_n_value) if enable_rerank else None
 
     st.subheader("Job description")
     job_description_file = st.file_uploader(
@@ -252,6 +269,8 @@ def main() -> None:
                     resume_texts,
                     top_k=top_k,
                     min_score=min_score,
+                    enable_rerank=enable_rerank,
+                    rerank_top_n=rerank_top_n,
                 )
             except ValueError as exc:
                 st.error(str(exc))

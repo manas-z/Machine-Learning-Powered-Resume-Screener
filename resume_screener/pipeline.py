@@ -39,6 +39,10 @@ def screen_resumes(
     *,
     top_k: int | None = None,
     min_score: float = 0.0,
+    enable_rerank: bool | None = None,
+    rerank_top_n: int | None = None,
+    rerank_model: str | None = None,
+    rerank_device: str | None = None,
 ) -> List[matching.ResumeMatch]:
     """Score resumes against a job description and return ranked matches."""
 
@@ -47,6 +51,10 @@ def screen_resumes(
         resume_text_by_id=resume_text_by_id,
         top_k=top_k,
         min_score=min_score,
+        enable_rerank=enable_rerank,
+        rerank_top_n=rerank_top_n,
+        rerank_model=(rerank_model or matching.DEFAULT_RERANK_MODEL),
+        rerank_device=rerank_device,
     )
 
 
