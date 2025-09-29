@@ -1,4 +1,5 @@
 pdfminer.six>=20221105
 streamlit>=1.30
 python-docx>=0.8.11
+sentence-transformers>=2.2.2
 
