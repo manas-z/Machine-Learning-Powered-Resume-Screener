@@ -13,6 +13,15 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 from resume_screener import matching
 from resume_screener.pdf_extractor import PDFExtractionError, extract_text_from_pdf
 
+try:
+    from docx import Document
+except ModuleNotFoundError:  # pragma: no cover - optional dependency for typing only
+    Document = None  # type: ignore[assignment]
+
+
+class JobDescriptionExtractionError(RuntimeError):
+    """Raised when the job description file cannot be processed."""
+
 
 def _extract_resume_texts(uploaded_files: Iterable[UploadedFile]) -> dict[str, str]:
     """Convert uploaded PDFs into a mapping of resume ids to raw text."""
@@ -20,18 +29,59 @@ def _extract_resume_texts(uploaded_files: Iterable[UploadedFile]) -> dict[str, s
     resume_texts: dict[str, str] = {}
     for index, uploaded_file in enumerate(uploaded_files, start=1):
         resume_stem = Path(uploaded_file.name).stem or f"resume_{index}"
-        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-            temp_pdf.write(uploaded_file.getbuffer())
-            temp_path = Path(temp_pdf.name)
-
         try:
-            resume_texts[resume_stem] = extract_text_from_pdf(temp_path)
+            resume_texts[resume_stem] = _extract_pdf_text(uploaded_file)
         except PDFExtractionError as exc:
             raise PDFExtractionError(f"Failed to read '{uploaded_file.name}': {exc}") from exc
-        finally:
-            temp_path.unlink(missing_ok=True)
 
     return resume_texts
+
+
+def _extract_pdf_text(uploaded_file: UploadedFile) -> str:
+    """Extract the text content from an uploaded PDF file."""
+
+    with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+        temp_pdf.write(uploaded_file.getbuffer())
+        temp_path = Path(temp_pdf.name)
+
+    try:
+        return extract_text_from_pdf(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def _extract_job_description(
+    text_input: str, uploaded_file: UploadedFile | None
+) -> str:
+    """Return the job description from manual text or an uploaded document."""
+
+    if uploaded_file is None:
+        return text_input
+
+    suffix = Path(uploaded_file.name).suffix.lower()
+
+    if suffix == ".pdf":
+        return _extract_pdf_text(uploaded_file)
+
+    if suffix in {".docx"}:
+        if Document is None:  # pragma: no cover - dependency guard
+            raise JobDescriptionExtractionError(
+                "python-docx is required to read Word documents. Please install the optional dependency."
+            )
+        document = Document(io.BytesIO(uploaded_file.getbuffer()))
+        return "\n".join(paragraph.text for paragraph in document.paragraphs)
+
+    if suffix == ".txt":
+        try:
+            return uploaded_file.getvalue().decode("utf-8")
+        except UnicodeDecodeError as exc:  # pragma: no cover - rare encoding issue
+            raise JobDescriptionExtractionError(
+                "Could not decode the uploaded text file. Please ensure it is UTF-8 encoded."
+            ) from exc
+
+    raise JobDescriptionExtractionError(
+        "Unsupported file type. Please upload a PDF, DOCX, or TXT file."
+    )
 
 
 def _download_button(matches: list[matching.ResumeMatch]) -> None:
@@ -54,10 +104,16 @@ def main() -> None:
     st.set_page_config(page_title="Simple Resume Screener", page_icon="📄")
     st.title("Simple Resume Screener")
     st.write(
-        "Paste your job description, upload resume PDFs, and compare them using a TF-IDF cosine similarity score."
+        "Paste your job description, upload a PDF/DOCX/TXT file, upload resume PDFs, and compare them using a TF-IDF cosine similarity score."
     )
 
-    job_description = st.text_area("Job description", height=220)
+    job_description_input = st.text_area("Job description", height=220)
+    job_description_file = st.file_uploader(
+        "Job description file (optional)",
+        type=["pdf", "docx", "txt"],
+        accept_multiple_files=False,
+        key="job_description_file",
+    )
     uploaded_resumes = st.file_uploader(
         "Resume PDFs",
         type=["pdf"],
@@ -75,8 +131,14 @@ def main() -> None:
     if not run_clicked:
         return
 
+    try:
+        job_description = _extract_job_description(job_description_input, job_description_file)
+    except (PDFExtractionError, JobDescriptionExtractionError) as exc:
+        st.error(str(exc))
+        return
+
     if not job_description.strip():
-        st.error("Please provide a job description before running the screener.")
+        st.error("Please provide a job description by typing it or uploading a file before running the screener.")
         return
 
     if not uploaded_resumes:
